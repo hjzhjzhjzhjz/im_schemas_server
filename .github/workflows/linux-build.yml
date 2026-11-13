@@ -1,0 +1,37 @@
+name: 编译 Linux 版本
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: 安装 musl 工具
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: 编译静态单二进制
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: 校验产物
+        run: |
+          BIN=target/x86_64-unknown-linux-musl/release/im_schemas_server
+          file "$BIN"
+          ldd "$BIN" || true
+          sha256sum "$BIN"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: im_schemas_server-linux-x86_64-musl
+          path: target/x86_64-unknown-linux-musl/release/im_schemas_server
+          if-no-files-found: error
