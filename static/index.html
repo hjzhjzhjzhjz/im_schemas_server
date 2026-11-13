@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>输入法码表查询服务</title>
+<style>
+  :root { --bg:#f5f7f8; --card:#fff; --line:#e6eaed; --pri:#2f9e6b; --txt:#2a2f33; --mut:#7a8288; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  header { background:linear-gradient(120deg,#2f9e6b,#3eaf7c); color:#fff; padding:20px 24px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:6px 0 0; opacity:.9; font-size:13px; }
+  .wrap { max-width:960px; margin:0 auto; padding:20px 16px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:16px 18px; margin-bottom:18px; }
+  .card h2 { margin:0 0 12px; font-size:15px; color:var(--pri); }
+  label { display:block; font-size:13px; color:var(--mut); margin:8px 0 4px; }
+  input[type=text], input[type=number], select, textarea {
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px;
+    font-size:14px; background:#fff; color:var(--txt); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:140px; }
+  button { background:var(--pri); color:#fff; border:0; border-radius:6px;
+           padding:9px 16px; font-size:14px; cursor:pointer; margin-top:10px; }
+  button:hover { opacity:.92; }
+  button.sec { background:#eef2f0; color:var(--txt); }
+  pre { background:#0f1115; color:#d6e2dc; padding:12px; border-radius:8px;
+        overflow:auto; font-size:12px; max-height:300px; }
+  img.result { max-width:100%; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:6px 8px; text-align:left; }
+  th { background:#f0f4f2; }
+  .tag { display:inline-block; background:#eef2f0; border-radius:4px; padding:1px 6px;
+         font-size:12px; color:var(--mut); margin-right:4px; }
+  .muted { color:var(--mut); font-size:12px; }
+  .ok { color:var(--pri); } .err { color:#c0392b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>输入法码表查询服务</h1>
+  <p>独立 Web/HTTP 版 · 上传码表(TSV) · 查编码 / 反查 / 多方案对比 / 词频</p>
+</header>
+<div class="wrap">
+
+  <div class="card">
+    <h2>① 上传码表（TSV：编码&lt;Tab&gt;字词）</h2>
+    <div class="row">
+      <div><label>方案名</label><input id="s_name" type="text" placeholder="如 五笔86"></div>
+      <div><label>选重键（可选）</label><input id="s_sel" type="text" placeholder="_;'4567890"></div>
+      <div><label>最大码长（可选）</label><input id="s_len" type="number" placeholder="4"></div>
+    </div>
+    <label>码表文件（.txt，Tab 分隔：code&lt;Tab&gt;word）</label>
+    <input id="s_file" type="file" accept=".txt,.tsv">
+    <div><button onclick="uploadSchema()">上传</button> <span id="s_msg" class="muted"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>② 方案列表</h2>
+    <div id="schema_list"><span class="muted">（暂无）</span></div>
+    <div><button class="sec" onclick="loadSchemas()">刷新</button></div>
+  </div>
+
+  <div class="card">
+    <h2>③ 查询编码</h2>
+    <div class="row">
+      <div><label>方案</label><select id="q_name"></select></div>
+      <div><label>查询内容</label><input id="q_text" type="text" placeholder="如 中国人民"></div>
+    </div>
+    <div class="row">
+      <div><label><input type="checkbox" id="q_force"> 强制单字</label></div>
+      <div><label><input type="checkbox" id="q_kb" checked> 显示键盘热力图</label></div>
+    </div>
+    <div>
+      <button onclick="queryImage()">查图文</button>
+      <button class="sec" onclick="queryJson()">查 JSON</button>
+    </div>
+    <div id="q_img_box" style="margin-top:12px;"></div>
+    <pre id="q_json" style="display:none;"></pre>
+  </div>
+
+  <div class="card">
+    <h2>④ 编码反查（code → 字词）</h2>
+    <div class="row">
+      <div><label>方案</label><select id="r_name"></select></div>
+      <div><label>编码</label><input id="r_code" type="text" placeholder="如 ggll"></div>
+    </div>
+    <div><button onclick="reverse()">反查</button></div>
+    <pre id="r_json"></pre>
+  </div>
+
+  <div class="card">
+    <h2>⑤ 多方案对比（all 组）</h2>
+    <label>方案名（逗号分隔，留空用服务端 IM_ALL_SCHEMAS）</label>
+    <input id="a_names" type="text" placeholder="五笔86,郑码">
+    <label>查询内容</label>
+    <input id="a_text" type="text" placeholder="中国人民">
+    <div><button onclick="allGroup()">对比</button></div>
+    <pre id="a_json"></pre>
+  </div>
+
+  <div class="card">
+    <h2>⑥ 词频上传与查询</h2>
+    <div class="row">
+      <div><label>词频名</label><input id="f_name" type="text" placeholder="常用词频"></div>
+      <div><label>词频文件（字词&lt;Tab&gt;词频）</label><input id="f_file" type="file"></div>
+    </div>
+    <div><button onclick="uploadFreq()">上传词频</button> <span id="f_msg" class="muted"></span></div>
+    <div class="row" style="margin-top:12px;">
+      <div><label>词频名</label><input id="fq_name" type="text"></div>
+      <div><label>要查的字词（空格分隔，最多100）</label><input id="fq_words" type="text" placeholder="的 中国 量子"></div>
+    </div>
+    <div><button class="sec" onclick="queryFreq()">查词频</button></div>
+    <pre id="fq_json"></pre>
+  </div>
+
+</div>
+
+<script>
+const api = (p, opt) => fetch(p, opt).then(async r => {
+  if (!r.ok) { let m = await r.text(); throw new Error(m); }
+  const ct = r.headers.get('content-type')||'';
+  return ct.includes('image') ? r.blob() : r.json();
+});
+
+function fillSelect(sel, names, withEmpty) {
+  sel.innerHTML = names.map(n => `<option>${n}</option>`).join('');
+}
+
+async function loadSchemas() {
+  try {
+    const data = await api('/api/schemas');
+    const box = document.getElementById('schema_list');
+    if (!data.length) { box.innerHTML = '<span class="muted">（暂无）</span>'; }
+    else {
+      box.innerHTML = '<table><tr><th>方案</th><th>来源</th><th>选重键</th><th>码长</th><th>条目</th></tr>' +
+        data.map(s => `<tr><td>${s.name}</td><td>${s.owner_alias||s.owner_id}</td><td><span class="tag">${s.select_keys}</span></td><td>${s.max_len}</td><td>${s.count}</td></tr>`).join('') + '</table>';
+    }
+    const names = data.map(s => s.name);
+    fillSelect(document.getElementById('q_name'), names);
+    fillSelect(document.getElementById('r_name'), names);
+  } catch(e) { alert(e.message); }
+}
+
+async function uploadSchema() {
+  const name = document.getElementById('s_name').value.trim();
+  const file = document.getElementById('s_file').files[0];
+  const msg = document.getElementById('s_msg');
+  if (!name || !file) { msg.textContent = '请填方案名并选择文件'; msg.className='err'; return; }
+  const fd = new FormData();
+  fd.append('name', name); fd.append('file', file);
+  const sel = document.getElementById('s_sel').value.trim();
+  const len = document.getElementById('s_len').value.trim();
+  if (sel) fd.append('select_keys', sel);
+  if (len) fd.append('max_len', len);
+  msg.textContent = '上传中…'; msg.className='muted';
+  try {
+    const r = await api('/api/schemas', {method:'POST', body:fd});
+    msg.textContent = `成功，导入 ${r.count} 条`; msg.className='ok';
+    loadSchemas();
+  } catch(e) { msg.textContent = e.message; msg.className='err'; }
+}
+
+async function queryImage() {
+  const name = document.getElementById('q_name').value;
+  const q = document.getElementById('q_text').value.trim();
+  const force = document.getElementById('q_force').checked;
+  const kb = document.getElementById('q_kb').checked;
+  if (!name || !q) return;
+  const url = `/api/query/${encodeURIComponent(name)}?q=${encodeURIComponent(q)}&force_single=${force}&show_keyboard=${kb}&fmt=image`;
+  try {
+    const blob = await api(url);
+    document.getElementById('q_json').style.display='none';
+    document.getElementById('q_img_box').innerHTML = `<img class="result" src="${URL.createObjectURL(blob)}">`;
+  } catch(e) { alert(e.message); }
+}
+
+async function queryJson() {
+  const name = document.getElementById('q_name').value;
+  const q = document.getElementById('q_text').value.trim();
+  if (!name || !q) return;
+  const url = `/api/query/${encodeURIComponent(name)}?q=${encodeURIComponent(q)}&fmt=json`;
+  try {
+    const r = await api(url);
+    document.getElementById('q_img_box').innerHTML='';
+    document.getElementById('q_json').style.display='block';
+    document.getElementById('q_json').textContent = JSON.stringify(r, null, 2);
+  } catch(e) { alert(e.message); }
+}
+
+async function reverse() {
+  const name = document.getElementById('r_name').value;
+  const code = document.getElementById('r_code').value.trim();
+  if (!name || !code) return;
+  const url = `/api/reverse/${encodeURIComponent(name)}?code=${encodeURIComponent(code)}&fmt=json`;
+  try {
+    const r = await api(url);
+    document.getElementById('r_json').textContent = JSON.stringify(r, null, 2);
+  } catch(e) { alert(e.message); }
+}
+
+async function allGroup() {
+  const names = document.getElementById('a_names').value.trim();
+  const q = document.getElementById('a_text').value.trim();
+  if (!q) return;
+  const url = `/api/all?q=${encodeURIComponent(q)}&fmt=json` + (names?`&schemas=${encodeURIComponent(names)}`:'');
+  try {
+    const r = await api(url);
+    document.getElementById('a_json').textContent = JSON.stringify(r, null, 2);
+  } catch(e) { alert(e.message); }
+}
+
+async function uploadFreq() {
+  const name = document.getElementById('f_name').value.trim();
+  const file = document.getElementById('f_file').files[0];
+  const msg = document.getElementById('f_msg');
+  if (!name || !file) { msg.textContent='请填词频名并选择文件'; msg.className='err'; return; }
+  const fd = new FormData(); fd.append('name', name); fd.append('file', file);
+  msg.textContent='上传中…'; msg.className='muted';
+  try {
+    const r = await api('/api/freq', {method:'POST', body:fd});
+    msg.textContent=`成功，导入 ${r.count} 条`; msg.className='ok';
+  } catch(e) { msg.textContent=e.message; msg.className='err'; }
+}
+
+async function queryFreq() {
+  const name = document.getElementById('fq_name').value.trim();
+  const w = document.getElementById('fq_words').value.trim();
+  if (!name || !w) return;
+  const url = `/api/freq/${encodeURIComponent(name)}?q=${encodeURIComponent(w)}`;
+  try {
+    const r = await api(url);
+    document.getElementById('fq_json').textContent = JSON.stringify(r, null, 2);
+  } catch(e) { alert(e.message); }
+}
+
+loadSchemas();
+</script>
+</body>
+</html>
